@@ -31,18 +31,10 @@ jobs:
         with:
           enablement: true
 
-      # Stamp every page with this commit and publish version.json, so a
-      # browser holding a cached page reloads itself once after a deploy.
-      - name: Stamp build id
-        run: |
-          BUILD="${GITHUB_SHA::7}"
-          printf '{"build":"%s"}\n' "$BUILD" > version.json
-          FILES=$(grep -rl '__BUILD_ID__' --include='*.html' . || true)
-          if [ -n "$FILES" ]; then
-            echo "$FILES" | xargs sed -i "s/__BUILD_ID__/$BUILD/g"
-            echo "Stamped build $BUILD into:"; echo "$FILES"
-          fi
-
+      # Note: build ids are stamped at commit time by scripts/stamp_build.py,
+      # not here. GitHub also runs its own "pages-build-deployment" branch
+      # builder on every push, and that publishes the raw repository content,
+      # so anything stamped inside this workflow would be overwritten.
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
