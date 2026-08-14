@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ConstructSim — 3D Construction Methodology Planner</title>
 <style>
@@ -1209,6 +1211,26 @@ addEventListener('resize',()=>{
 
 // ---------- Init ----------
 renderPhases(); syncTimeline(); setLevel(0); setTool('wall'); applyPhaseVisibility();
+</script>
+<script>
+/* ---- auto-refresh when a newer build is deployed ---------------------------
+   GitHub Pages forces Cache-Control: max-age=600 and does not allow custom
+   headers, so a browser can hold a stale page. Each deploy stamps BUILD_ID and
+   writes ../version.json; if they differ we reload once (guarded against loops). */
+window.__BUILD_ID__="__BUILD_ID__";
+(function(){
+  if(location.protocol==="file:")return;                 // portable/offline use
+  if(window.__BUILD_ID__==="__BUILD"+"_ID__")return;      // not a deployed build (local dev)
+  fetch("../version.json?t="+Date.now(),{cache:"no-store"})
+    .then(r=>r.ok?r.json():null)
+    .then(v=>{
+      if(!v||!v.build||v.build===window.__BUILD_ID__)return;
+      if(sessionStorage.getItem("ps-build")===v.build)return;   // already reloaded for this build
+      sessionStorage.setItem("ps-build",v.build);
+      location.reload();
+    })
+    .catch(()=>{});
+})();
 </script>
 </body>
 </html>
