@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ConstructSim — 3D Construction Methodology Planner</title>
+<style>
+  :root{
+    --bg:#1a1d23; --panel:#23272f; --panel2:#2b303a; --line:#3a4150;
+    --text:#e8eaf0; --muted:#9aa3b2; --accent:#4f8ef7; --accent2:#f7a44f;
+    --danger:#e05555; --ok:#51b56d;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{width:100%;height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);}
+  #canvas-wrap{position:absolute;inset:0;}
+  canvas{display:block;}
+
+  /* ---------- Top bar ---------- */
+  #topbar{position:absolute;top:0;left:0;right:0;height:48px;background:var(--panel);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 12px;z-index:10;}
+  #topbar .logo{font-weight:700;font-size:15px;letter-spacing:.5px;margin-right:8px;}
+  #topbar .logo span{color:var(--accent);}
+  .tb-group{display:flex;gap:4px;align-items:center;padding:0 8px;border-left:1px solid var(--line);height:100%;}
+  .tb-btn{background:transparent;border:1px solid transparent;color:var(--text);padding:5px 10px;border-radius:6px;
+    cursor:pointer;font-size:12.5px;display:flex;align-items:center;gap:5px;}
+  .tb-btn:hover{background:var(--panel2);}
+  .tb-btn.warn:hover{background:#4a2a2a;color:#f0b0b0;}
+
+  /* ---------- Tool palette (left) ---------- */
+  #palette{position:absolute;top:60px;left:12px;width:180px;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:10px;z-index:10;max-height:calc(100vh - 220px);overflow-y:auto;}
+  #palette h3{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:10px 0 6px;}
+  #palette h3:first-child{margin-top:0;}
+  .tool{display:flex;align-items:center;gap:8px;width:100%;background:var(--panel2);border:1px solid transparent;
+    color:var(--text);padding:7px 9px;border-radius:7px;cursor:pointer;font-size:12.5px;margin-bottom:4px;text-align:left;}
+  .tool:hover{border-color:var(--line);}
+  .tool.active{border-color:var(--accent);background:#2a3547;}
+  .tool .sw{width:14px;height:14px;border-radius:4px;flex:none;}
+
+  /* ---------- Right panel ---------- */
+  #rightpanel{position:absolute;top:60px;right:12px;width:230px;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:12px;z-index:10;font-size:12.5px;max-height:calc(100vh - 220px);overflow-y:auto;}
+  #rightpanel h3{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px;}
+  .phase-row{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;background:var(--panel2);
+    margin-bottom:5px;cursor:pointer;border:1px solid transparent;}
+  .phase-row.active{border-color:var(--accent2);}
+  .phase-row .dot{width:10px;height:10px;border-radius:50%;flex:none;}
+  .phase-row input{background:transparent;border:none;color:var(--text);font-size:12.5px;width:100%;outline:none;}
+  .phase-row .del{color:var(--muted);cursor:pointer;font-size:14px;padding:0 3px;}
+  .phase-row .del:hover{color:var(--danger);}
+  .small-btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;
+    padding:5px 9px;font-size:12px;cursor:pointer;width:100%;margin-top:4px;}
+  .small-btn:hover{border-color:var(--accent);}
+  .field{margin-bottom:8px;}
+  .field label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px;}
+  .field input[type=range]{width:100%;}
+  .field .val{color:var(--accent2);font-weight:600;}
+
+  /* ---------- Timeline (bottom) ---------- */
+  #timeline{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:10px 16px;z-index:10;display:flex;align-items:center;gap:12px;min-width:520px;}
+  #timeline .play{width:34px;height:34px;border-radius:50%;background:var(--accent);border:none;color:#fff;
+    font-size:14px;cursor:pointer;flex:none;}
+  #phase-slider{flex:1;}
+  #phase-label{font-size:12.5px;min-width:150px;text-align:left;color:var(--accent2);font-weight:600;}
+
+  /* ---------- Status / hint ---------- */
+  #hint{position:absolute;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(30,34,42,.9);
+    padding:6px 14px;border-radius:20px;font-size:12px;color:var(--muted);z-index:9;pointer-events:none;white-space:nowrap;}
+  #level-indicator{position:absolute;top:60px;left:50%;transform:translateX(-50%);background:rgba(30,34,42,.85);
+    padding:5px 14px;border-radius:20px;font-size:12px;z-index:9;pointer-events:none;}
+  #level-indicator b{color:var(--accent2);}
+  input[type=file]{display:none;}
+</style>
+</head>
+<body>
+<div id="canvas-wrap"></div>
+
+<div id="topbar">
+  <div class="logo">🏗️ Construct<span>Sim</span></div>
+  <div class="tb-group">
+    <button class="tb-btn" id="btn-save" title="Download project as JSON">💾 Save</button>
+    <button class="tb-btn" id="btn-load" title="Load project JSON">📂 Load</button>
+    <button class="tb-btn" id="btn-shot" title="Save screenshot PNG">📸 Snapshot</button>
+  </div>
+  <div class="tb-group">
+    <button class="tb-btn" id="btn-lvl-down" title="Go down one level (PgDn)">⬇ Level</button>
+    <button class="tb-btn" id="btn-lvl-up" title="Go up one level (PgUp)">⬆ Level</button>
+  </div>
+  <div class="tb-group">
+    <button class="tb-btn warn" id="btn-clear">🗑 Clear all</button>
+  </div>
+  <div class="tb-group">
+    <a class="tb-btn" href="flowchart.html" title="Open FlowForge flowchart maker">🔷 Flowchart</a>
+  </div>
+  <div style="flex:1"></div>
+  <div style="font-size:11.5px;color:var(--muted)">Left-drag: place · Right-drag: orbit · Middle/Shift-drag: pan · Wheel: zoom · R: rotate · Del: delete selected · Esc: select tool</div>
+</div>
+
+<div id="level-indicator">Level <b id="lvl-num">0</b> (elev. <b id="lvl-elev">0.0</b> m)</div>
+
+<div id="palette">
+  <h3>Tools</h3>
+  <button class="tool" data-tool="select"><span class="sw" style="background:#888">☝</span>Select / Move</button>
+  <button class="tool" data-tool="delete"><span class="sw" style="background:#e05555"></span>Demolish</button>
+  <h3>Draw (SketchUp-style)</h3>
+  <button class="tool" data-tool="rect"><span class="sw" style="background:#5fc9b0"></span>Rectangle → pull up</button>
+  <button class="tool" data-tool="poly"><span class="sw" style="background:#5f9fc9"></span>Polygon → pull up</button>
+  <button class="tool" data-tool="pushpull"><span class="sw" style="background:#c9b05f"></span>Push / Pull height</button>
+  <div style="display:flex;align-items:center;gap:8px;padding:3px 2px 0;">
+    <label style="font-size:11px;color:var(--muted)">Draw color</label>
+    <input type="color" id="draw-color" value="#c9c2b8" style="width:40px;height:22px;border:none;background:transparent;cursor:pointer;">
+  </div>
+  <h3>Structure</h3>
+  <button class="tool active" data-tool="wall"><span class="sw" style="background:#c9c2b8"></span>Wall (drag)</button>
+  <button class="tool" data-tool="slab"><span class="sw" style="background:#9aa0a8"></span>Slab (drag area)</button>
+  <button class="tool" data-tool="column"><span class="sw" style="background:#7f8a99"></span>Column</button>
+  <button class="tool" data-tool="beam"><span class="sw" style="background:#8a7f6a"></span>Beam (drag)</button>
+  <button class="tool" data-tool="footing"><span class="sw" style="background:#6b6f76"></span>Footing / Pile cap</button>
+  <button class="tool" data-tool="stairs"><span class="sw" style="background:#b0a494"></span>Stairs</button>
+  <h3>Temporary works</h3>
+  <button class="tool" data-tool="scaffold"><span class="sw" style="background:#d98c2b"></span>Scaffolding</button>
+  <button class="tool" data-tool="formwork"><span class="sw" style="background:#d4b34a"></span>Formwork panel</button>
+  <button class="tool" data-tool="shoring"><span class="sw" style="background:#c98f5f"></span>Shoring prop</button>
+  <button class="tool" data-tool="barrier"><span class="sw" style="background:#e0623a"></span>Safety barrier (drag)</button>
+  <h3>Equipment</h3>
+  <button class="tool" data-tool="crane"><span class="sw" style="background:#f2c230"></span>Tower crane</button>
+  <button class="tool" data-tool="mobilecrane"><span class="sw" style="background:#e8b13a"></span>Mobile crane</button>
+  <button class="tool" data-tool="excavator"><span class="sw" style="background:#e8a020"></span>Excavator</button>
+  <button class="tool" data-tool="truck"><span class="sw" style="background:#4a8f5c"></span>Dump truck</button>
+  <button class="tool" data-tool="pump"><span class="sw" style="background:#b05fc9"></span>Concrete pump</button>
+  <h3>Substation — Primary</h3>
+  <button class="tool" data-tool="transformer"><span class="sw" style="background:#6d7b52"></span>Power transformer</button>
+  <button class="tool" data-tool="gantry"><span class="sw" style="background:#a8b0ba"></span>Gantry / takeoff (drag)</button>
+  <button class="tool" data-tool="busbar"><span class="sw" style="background:#c9c9d4"></span>Busbar on posts (drag)</button>
+  <button class="tool" data-tool="breaker"><span class="sw" style="background:#7f9db8"></span>Circuit breaker</button>
+  <button class="tool" data-tool="disconnector"><span class="sw" style="background:#96a8b8"></span>Disconnector</button>
+  <button class="tool" data-tool="instrument"><span class="sw" style="background:#8899aa"></span>CT / VT</button>
+  <button class="tool" data-tool="arrester"><span class="sw" style="background:#9988bb"></span>Surge arrester</button>
+  <button class="tool" data-tool="lightningmast"><span class="sw" style="background:#c0c6ce"></span>Lightning mast</button>
+  <h3>Substation — Civil</h3>
+  <button class="tool" data-tool="plinth"><span class="sw" style="background:#8d9199"></span>Equipment plinth</button>
+  <button class="tool" data-tool="bund"><span class="sw" style="background:#6f7580"></span>Oil bund (drag area)</button>
+  <button class="tool" data-tool="firewall"><span class="sw" style="background:#b85c4a"></span>Firewall (drag)</button>
+  <button class="tool" data-tool="cabletrench"><span class="sw" style="background:#5a5f68"></span>Cable trench (drag)</button>
+  <button class="tool" data-tool="gravel"><span class="sw" style="background:#adb2b8"></span>Gravel pad (drag area)</button>
+  <button class="tool" data-tool="groundgrid"><span class="sw" style="background:#4a9060"></span>Earth grid (drag area)</button>
+  <button class="tool" data-tool="controlbuilding"><span class="sw" style="background:#c8bfae"></span>Control building</button>
+  <h3>Substation — Logistics</h3>
+  <button class="tool" data-tool="spmt"><span class="sw" style="background:#cc4444"></span>SPMT + transformer</button>
+  <h3>Site</h3>
+  <button class="tool" data-tool="excavation"><span class="sw" style="background:#7a5c3a"></span>Excavation pit (drag)</button>
+  <button class="tool" data-tool="container"><span class="sw" style="background:#3a7ac9"></span>Site office</button>
+  <button class="tool" data-tool="fence"><span class="sw" style="background:#aaa"></span>Hoarding fence (drag)</button>
+  <h3>Imported models</h3>
+  <div id="model-list"></div>
+  <button class="small-btn" id="btn-import-model" title="Import .glb / .gltf / .dae / .obj (e.g. from SketchUp 3D Warehouse)">+ Import 3D model</button>
+  <div style="font-size:10.5px;color:var(--muted);margin-top:5px;line-height:1.45">
+    From <b>3D Warehouse</b>: open a model → Download → <b>glTF</b> (best) or Collada/OBJ, then import here.
+  </div>
+</div>
+
+<div id="rightpanel">
+  <h3>Construction Phases</h3>
+  <div id="phase-list"></div>
+  <button class="small-btn" id="btn-add-phase">+ Add phase</button>
+  <div style="height:14px"></div>
+  <h3>Wall / element height</h3>
+  <div class="field">
+    <label>Height: <span class="val" id="hval">3.0</span> m</label>
+    <input type="range" id="hslider" min="1" max="12" step="0.5" value="3">
+  </div>
+  <div style="height:6px"></div>
+  <h3>Stats</h3>
+  <div id="stats" style="color:var(--muted);line-height:1.7"></div>
+</div>
+
+<div id="timeline">
+  <button class="play" id="btn-play">▶</button>
+  <input type="range" id="phase-slider" min="0" max="0" step="1" value="0">
+  <div id="phase-label">—</div>
+</div>
+
+<div id="hint">Pick a tool, then click or drag on the grid to build</div>
+<input type="file" id="file-input" accept=".json">
+<input type="file" id="model-input" accept=".glb,.gltf,.dae,.obj">
+
+<script src="lib/three.min.js"></script>
+<script src="lib/fflate.min.js"></script>
+<script src="lib/GLTFLoader.js"></script>
+<script src="lib/ColladaLoader.js"></script>
+<script src="lib/OBJLoader.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   ConstructSim — Sims-style 3D construction methodology planner
+   ============================================================ */
+const GRID = 1;            // 1 m grid
+const LEVEL_H = 3;         // storey height
+const WORLD = 60;          // buildable half-extent
+
+// ---------- Scene ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87b5d8);
+scene.fog = new THREE.Fog(0x87b5d8, 120, 320);
+
+const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.getElementById('canvas-wrap').appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 1000);
+
+// Orbit state (custom controls — Sims-like)
+const cam = { target:new THREE.Vector3(0,0,0), dist:42, theta:Math.PI/4, phi:Math.PI/3.4 };
+function updateCamera(){
+  const sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
+  camera.position.set(
+    cam.target.x + cam.dist*sp*Math.cos(cam.theta),
+    cam.target.y + cam.dist*cp,
+    cam.target.z + cam.dist*sp*Math.sin(cam.theta));
+  camera.lookAt(cam.target);
+}
+updateCamera();
+
+// Lights
+scene.add(new THREE.HemisphereLight(0xdfeaff, 0x8a7a5a, 0.75));
+const sun = new THREE.DirectionalLight(0xfff2dd, 1.15);
+sun.position.set(40,70,25);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-80; sun.shadow.camera.right=80;
+sun.shadow.camera.top=80; sun.shadow.camera.bottom=-80;
+sun.shadow.camera.far=250;
+scene.add(sun);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(WORLD*2+40, WORLD*2+40),
+  new THREE.MeshLambertMaterial({color:0x9db06a}));
+ground.rotation.x = -Math.PI/2; ground.receiveShadow = true;
+scene.add(ground);
+
+const gridHelper = new THREE.GridHelper(WORLD*2, WORLD*2/GRID, 0x668044, 0x7d9455);
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+// Build plane for raycasting at current level
+const buildPlane = new THREE.Mesh(new THREE.PlaneGeometry(WORLD*2, WORLD*2),
+  new THREE.MeshBasicMaterial({visible:false}));
+buildPlane.rotation.x = -Math.PI/2;
+scene.add(buildPlane);
+
+// Level grid outline shown when above 0
+const levelGrid = new THREE.GridHelper(WORLD*2, WORLD*2/GRID, 0x4f8ef7, 0x4f8ef7);
+levelGrid.material.transparent = true; levelGrid.material.opacity = 0.14;
+levelGrid.visible = false;
+scene.add(levelGrid);
+
+// ---------- State ----------
+let currentTool = 'wall';
+let currentLevel = 0;
+let elemHeight = 3.0;
+let elements = [];        // {id,type,params,phase,mesh}
+let nextId = 1;
+let selected = null;
+
+const PHASE_COLORS = ['#4f8ef7','#f7a44f','#51b56d','#c95fbe','#e05555','#3ac9c9','#b0b840','#8a6ff0','#f06fa0','#7a8a99'];
+let phases = [
+  {name:'1. Site setup & hoarding'},
+  {name:'2. Earthworks & earth grid'},
+  {name:'3. Foundations, trenches & bunds'},
+  {name:'4. Steel structures & gantries'},
+  {name:'5. Transformer delivery & jacking'},
+  {name:'6. HV equipment & busbars'},
+  {name:'7. Cabling, testing & energization'},
+];
+let activePhase = 0;
+let viewPhase = phases.length-1;   // timeline position (show up to this phase)
+let playing = false, playTimer = null;
+
+// ---------- Materials ----------
+const MAT = {};
+function mat(color, opts={}){ return new THREE.MeshLambertMaterial(Object.assign({color}, opts)); }
+MAT.wall      = () => mat(0xd8d2c8);
+MAT.slab      = () => mat(0x9aa0a8);
+MAT.column    = () => mat(0x8a95a3);
+MAT.beam      = () => mat(0x93876f);
+MAT.footing   = () => mat(0x6b6f76);
+MAT.stairs    = () => mat(0xb0a494);
+MAT.scaffold  = () => mat(0xd98c2b);
+MAT.formwork  = () => mat(0xd4b34a);
+MAT.shoring   = () => mat(0xc98f5f);
+MAT.barrier   = () => mat(0xe0623a);
+MAT.craneY    = () => mat(0xf2c230);
+MAT.steel     = () => mat(0x555a63);
+MAT.cab       = () => mat(0x2f6fb0);
+MAT.track     = () => mat(0x3a3d42);
+MAT.dirt      = () => mat(0x7a5c3a);
+MAT.container = () => mat(0x3a7ac9);
+MAT.fence     = () => mat(0xb9bec6);
+MAT.green     = () => mat(0x4a8f5c);
+MAT.purple    = () => mat(0xb05fc9);
+MAT.txf       = () => mat(0x6d7b52);      // transformer tank olive-grey
+MAT.galv      = () => mat(0xa8b0ba);      // galvanized steel
+MAT.porcelain = () => mat(0xc9a25a);      // brown porcelain insulator
+MAT.busAl     = () => mat(0xd4d6de);      // aluminium tube
+MAT.concrete  = () => mat(0x8d9199);
+MAT.gravel    = () => mat(0xadb2b8);
+MAT.firewall  = () => mat(0xb85c4a);
+MAT.trench    = () => mat(0x5a5f68);
+MAT.copper    = () => mat(0x4a9060);      // buried earth grid (shown green)
+MAT.spmtRed   = () => mat(0xcc4444);
+
+// shared sub-assemblies
+function insulatorStack(h,r=0.09){ // stacked-shed post insulator
+  const g=new THREE.Group(); const sheds=Math.max(3,Math.round(h/0.25));
+  const core=cyl(r*0.55,r*0.55,h,MAT.porcelain()); core.position.y=h/2; g.add(core);
+  for(let i=0;i<sheds;i++){ const shed=cyl(r,r,0.05,MAT.porcelain());
+    shed.position.y=(i+0.5)*(h/sheds); g.add(shed); }
+  return g;
+}
+function latticeColumn(h,w,material){ // simple lattice-look column
+  const g=new THREE.Group();
+  for(const [ox,oz] of [[-w/2,-w/2],[w/2,-w/2],[-w/2,w/2],[w/2,w/2]]){
+    const leg=box(0.07,h,0.07,material); leg.position.set(ox,h/2,oz); g.add(leg); }
+  const n=Math.max(2,Math.round(h/1.5));
+  for(let i=1;i<=n;i++){ const br=box(w+0.07,0.06,w+0.07,material);
+    br.position.y=i*(h/n)-0.03; g.add(br); }
+  return g;
+}
+
+function box(w,h,d,material){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material); m.castShadow=m.receiveShadow=true; return m; }
+function cyl(rt,rb,h,material,seg=12){ const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg),material); m.castShadow=m.receiveShadow=true; return m; }
+
+// ---------- Element builders (all origin at ground of their level) ----------
+const BUILDERS = {
+  wall(p){ // p: x1,z1,x2,z2,h
+    const dx=p.x2-p.x1, dz=p.z2-p.z1, len=Math.max(Math.hypot(dx,dz),GRID);
+    const g=new THREE.Group();
+    const w=box(len,p.h,0.2,MAT.wall()); w.position.y=p.h/2; g.add(w);
+    g.position.set((p.x1+p.x2)/2, p.y, (p.z1+p.z2)/2);
+    g.rotation.y = -Math.atan2(dz,dx);
+    return g;
+  },
+  slab(p){ // x,z center, w,d
+    const g=new THREE.Group();
+    const s=box(p.w,0.25,p.d,MAT.slab()); s.position.y=0.125; g.add(s);
+    g.position.set(p.x,p.y,p.z); return g;
+  },
+  column(p){ const g=new THREE.Group();
+    const c=box(0.4,p.h,0.4,MAT.column()); c.position.y=p.h/2; g.add(c);
+    g.position.set(p.x,p.y,p.z); return g; },
+  beam(p){ const dx=p.x2-p.x1,dz=p.z2-p.z1,len=Math.max(Math.hypot(dx,dz),GRID);
+    const g=new THREE.Group();
+    const b=box(len,0.35,0.3,MAT.beam()); b.position.y=p.h-0.175; g.add(b);
+    g.position.set((p.x1+p.x2)/2,p.y,(p.z1+p.z2)/2); g.rotation.y=-Math.atan2(dz,dx); return g; },
+  footing(p){ const g=new THREE.Group();
+    const f=box(1.6,0.6,1.6,MAT.footing()); f.position.y=0.3; g.add(f);
+    const st=box(0.5,0.5,0.5,MAT.column()); st.position.y=0.85; g.add(st);
+    g.position.set(p.x,p.y,p.z); return g; },
+  stairs(p){ const g=new THREE.Group(); const steps=10, rise=p.h/steps, run=0.3;
+    for(let i=0;i<steps;i++){ const s=box(1.2,rise,run,MAT.stairs());
+      s.position.set(0, rise*(i+0.5), -run*steps/2 + run*(i+0.5)); g.add(s); }
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  scaffold(p){ const g=new THREE.Group(); const lifts=Math.max(1,Math.round(p.h/2));
+    const m=MAT.scaffold();
+    for(const [px,pz] of [[-0.6,-0.6],[0.6,-0.6],[-0.6,0.6],[0.6,0.6]]){
+      const post=cyl(0.04,0.04,lifts*2,m); post.position.set(px,lifts,pz); g.add(post); }
+    for(let l=1;l<=lifts;l++){
+      const deck=box(1.3,0.05,1.3,MAT.formwork()); deck.position.y=l*2; g.add(deck);
+      for(const r of [0,Math.PI/2]){ const rail=box(1.3,0.04,0.04,m);
+        rail.position.y=l*2-0.9; rail.rotation.y=r; g.add(rail);} }
+    g.position.set(p.x,p.y,p.z); return g; },
+  formwork(p){ const g=new THREE.Group();
+    const f=box(1.8,p.h,0.08,MAT.formwork()); f.position.y=p.h/2; g.add(f);
+    const brace=cyl(0.03,0.03,p.h*1.1,MAT.steel()); brace.position.set(0,p.h/2*0.9,0.55);
+    brace.rotation.x=Math.PI/6; g.add(brace);
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  shoring(p){ const g=new THREE.Group();
+    const prop=cyl(0.06,0.06,p.h,MAT.shoring()); prop.position.y=p.h/2; g.add(prop);
+    const plate=box(0.4,0.04,0.4,MAT.steel()); plate.position.y=p.h; g.add(plate);
+    const base=box(0.4,0.04,0.4,MAT.steel()); base.position.y=0.02; g.add(base);
+    g.position.set(p.x,p.y,p.z); return g; },
+  barrier(p){ const dx=p.x2-p.x1,dz=p.z2-p.z1,len=Math.max(Math.hypot(dx,dz),GRID);
+    const g=new THREE.Group(); const n=Math.round(len/2);
+    for(let i=0;i<n;i++){ const b=box(1.8,0.9,0.12,MAT.barrier());
+      b.position.set(-len/2+ (i+0.5)*(len/n), 0.55, 0); g.add(b);
+      const foot=box(0.5,0.1,0.5,MAT.steel()); foot.position.set(b.position.x,0.05,0); g.add(foot);}
+    g.position.set((p.x1+p.x2)/2,p.y,(p.z1+p.z2)/2); g.rotation.y=-Math.atan2(dz,dx); return g; },
+  crane(p){ const g=new THREE.Group(); const H=22, JIB=14;
+    const base=box(3,0.6,3,MAT.footing()); base.position.y=0.3; g.add(base);
+    const mast=box(0.9,H,0.9,MAT.craneY()); mast.position.y=H/2+0.6; g.add(mast);
+    const slew=box(1.2,1,1.2,MAT.steel()); slew.position.y=H+1.1; g.add(slew);
+    const jib=box(JIB,0.5,0.6,MAT.craneY()); jib.position.set(JIB/2-2,H+1.8,0); g.add(jib);
+    const cjib=box(4,0.5,0.6,MAT.craneY()); cjib.position.set(-4,H+1.8,0); g.add(cjib);
+    const cw=box(1.4,1.2,1.4,MAT.steel()); cw.position.set(-5.4,H+1.1,0); g.add(cw);
+    const cabin=box(1.1,1.2,1.1,MAT.cab()); cabin.position.set(1,H+0.9,0.9); g.add(cabin);
+    const cable=cyl(0.02,0.02,H*0.55,MAT.steel()); cable.position.set(JIB-3.5,H+1.8-H*0.275,0); g.add(cable);
+    const hook=box(0.4,0.4,0.4,MAT.steel()); hook.position.set(JIB-3.5,H+1.8-H*0.55,0); g.add(hook);
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  mobilecrane(p){ const g=new THREE.Group();
+    const chassis=box(4,0.7,1.8,MAT.craneY()); chassis.position.y=0.75; g.add(chassis);
+    for(const wx of [-1.4,0,1.4]) for(const wz of [-0.95,0.95]){
+      const wl=cyl(0.4,0.4,0.3,MAT.track()); wl.rotation.x=Math.PI/2; wl.position.set(wx,0.4,wz); g.add(wl);}
+    const cab=box(1.2,0.9,1.6,MAT.cab()); cab.position.set(1.6,1.55,0); g.add(cab);
+    const boom=box(7,0.4,0.4,MAT.craneY()); boom.position.set(-2.2,3.4,0); boom.rotation.z=Math.PI/5; g.add(boom);
+    for(const oz of [-1.3,1.3]) for(const ox of [-1.6,1.6]){
+      const rig=box(0.25,0.8,0.25,MAT.steel()); rig.position.set(ox,0.5,oz); g.add(rig);}
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  excavator(p){ const g=new THREE.Group();
+    const trackL=box(3,0.6,0.7,MAT.track()); trackL.position.set(0,0.3,-0.8); g.add(trackL);
+    const trackR=box(3,0.6,0.7,MAT.track()); trackR.position.set(0,0.3,0.8); g.add(trackR);
+    const body=box(2.2,1,1.8,MAT.craneY()); body.position.set(-0.2,1.15,0); g.add(body);
+    const cab=box(1,1,0.9,MAT.cab()); cab.position.set(0.3,2.1,-0.4); g.add(cab);
+    const boom=box(2.4,0.35,0.35,MAT.craneY()); boom.position.set(1.6,1.9,0.3); boom.rotation.z=Math.PI/6; g.add(boom);
+    const stick=box(1.8,0.28,0.28,MAT.craneY()); stick.position.set(3,1.5,0.3); stick.rotation.z=-Math.PI/3; g.add(stick);
+    const bucket=box(0.7,0.5,0.8,MAT.steel()); bucket.position.set(3.4,0.45,0.3); g.add(bucket);
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  truck(p){ const g=new THREE.Group();
+    const bed=box(3,0.9,1.8,MAT.green()); bed.position.set(-0.6,1.3,0); g.add(bed);
+    const cab=box(1.2,1.1,1.7,MAT.cab()); cab.position.set(1.7,1.25,0); g.add(cab);
+    const frame=box(4.4,0.3,1.4,MAT.steel()); frame.position.y=0.75; g.add(frame);
+    for(const wx of [-1.6,-0.6,1.6]) for(const wz of [-0.9,0.9]){
+      const wl=cyl(0.42,0.42,0.32,MAT.track()); wl.rotation.x=Math.PI/2; wl.position.set(wx,0.42,wz); g.add(wl);}
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  pump(p){ const g=new THREE.Group();
+    const chassis=box(4,0.7,1.8,MAT.purple()); chassis.position.y=0.75; g.add(chassis);
+    const cab=box(1.2,0.9,1.6,MAT.cab()); cab.position.set(1.6,1.55,0); g.add(cab);
+    for(const wx of [-1.4,0,1.4]) for(const wz of [-0.95,0.95]){
+      const wl=cyl(0.4,0.4,0.3,MAT.track()); wl.rotation.x=Math.PI/2; wl.position.set(wx,0.4,wz); g.add(wl);}
+    const b1=box(5,0.3,0.3,MAT.purple()); b1.position.set(-1,3.2,0); b1.rotation.z=Math.PI/4.5; g.add(b1);
+    const b2=box(4,0.25,0.25,MAT.purple()); b2.position.set(-3.5,4.6,0); b2.rotation.z=-Math.PI/12; g.add(b2);
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  excavation(p){ const g=new THREE.Group();
+    const pit=box(p.w,1.5,p.d,MAT.dirt()); pit.position.y=-0.75; g.add(pit);
+    const rim=new THREE.Mesh(new THREE.BoxGeometry(p.w+0.4,0.12,p.d+0.4),
+      new THREE.MeshLambertMaterial({color:0x5c4428}));
+    rim.position.y=0.06; rim.castShadow=rim.receiveShadow=true; g.add(rim);
+    g.position.set(p.x,p.y,p.z); return g; },
+  container(p){ const g=new THREE.Group();
+    const c=box(6,2.6,2.4,MAT.container()); c.position.y=1.4; g.add(c);
+    const door=box(0.05,1.8,0.9,mat(0xffffff)); door.position.set(3.01,1.1,0.5); g.add(door);
+    const win=box(0.05,0.8,1,mat(0xbfe3ff)); win.position.set(3.01,1.6,-0.6); g.add(win);
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  fence(p){ const dx=p.x2-p.x1,dz=p.z2-p.z1,len=Math.max(Math.hypot(dx,dz),GRID);
+    const g=new THREE.Group(); const n=Math.max(1,Math.round(len/2));
+    for(let i=0;i<n;i++){ const panel=box(len/n-0.05,2,0.06,MAT.fence());
+      panel.position.set(-len/2+(i+0.5)*(len/n),1.05,0); g.add(panel);
+      const post=cyl(0.05,0.05,2.1,MAT.steel()); post.position.set(-len/2+i*(len/n),1.05,0); g.add(post);}
+    g.position.set((p.x1+p.x2)/2,p.y,(p.z1+p.z2)/2); g.rotation.y=-Math.atan2(dz,dx); return g; },
+  /* ---------------- Substation elements ---------------- */
+  transformer(p){ const g=new THREE.Group();
+    const tank=box(3.6,3,2.4,MAT.txf()); tank.position.y=1.7; g.add(tank);
+    // radiator banks
+    for(const side of [-1,1]){ for(let i=0;i<5;i++){
+      const rad=box(0.12,2.2,0.5,MAT.txf());
+      rad.position.set(-1.5+i*0.75, 1.6, side*1.45); g.add(rad); } }
+    // conservator
+    const cons=cyl(0.45,0.45,2.6,MAT.txf()); cons.rotation.z=Math.PI/2;
+    cons.position.set(0,3.9,-0.7); g.add(cons);
+    // HV bushings (3) + LV bushings (3)
+    for(let i=0;i<3;i++){
+      const hv=insulatorStack(1.6,0.12); hv.position.set(-1.1+i*1.1,3.2,0.5); g.add(hv);
+      const lv=insulatorStack(0.9,0.09); lv.position.set(-1.1+i*1.1,3.2,-0.4); g.add(lv); }
+    // wheels / rails
+    for(const wx of [-1.3,1.3]) for(const wz of [-0.9,0.9]){
+      const wl=cyl(0.22,0.22,0.15,MAT.steel()); wl.rotation.x=Math.PI/2;
+      wl.position.set(wx,0.22,wz); g.add(wl); }
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  gantry(p){ // drag: lattice portal between two points, beam on top
+    const dx=p.x2-p.x1,dz=p.z2-p.z1,len=Math.max(Math.hypot(dx,dz),2);
+    const H=p.h>6?p.h:9;
+    const g=new THREE.Group();
+    const c1=latticeColumn(H,0.5,MAT.galv()); c1.position.x=-len/2; g.add(c1);
+    const c2=latticeColumn(H,0.5,MAT.galv()); c2.position.x=len/2; g.add(c2);
+    const beamTop=box(len,0.5,0.5,MAT.galv()); beamTop.position.y=H-0.25; g.add(beamTop);
+    // suspension insulators + droppers
+    for(let i=1;i<=3;i++){ const ins=insulatorStack(1.1,0.08);
+      ins.position.set(-len/2+i*(len/4),H-1.35,0); ins.rotation.z=Math.PI; ins.position.y=H-0.4-1.1; g.add(ins); }
+    g.position.set((p.x1+p.x2)/2,p.y,(p.z1+p.z2)/2); g.rotation.y=-Math.atan2(dz,dx); return g; },
+  busbar(p){ // drag: tubular bus supported on post insulators every 4 m
+    const dx=p.x2-p.x1,dz=p.z2-p.z1,len=Math.max(Math.hypot(dx,dz),GRID);
+    const H=2.6;
+    const g=new THREE.Group();
+    const tube=cyl(0.06,0.06,len,MAT.busAl()); tube.rotation.z=Math.PI/2; tube.position.y=H; g.add(tube);
+    const n=Math.max(2,Math.round(len/4)+1);
+    for(let i=0;i<n;i++){
+      const px=-len/2+i*(len/(n-1));
+      const ped=box(0.3,0.9,0.3,MAT.galv()); ped.position.set(px,0.45,0); g.add(ped);
+      const ins=insulatorStack(H-0.9-0.1,0.1); ins.position.set(px,0.9,0); g.add(ins); }
+    g.position.set((p.x1+p.x2)/2,p.y,(p.z1+p.z2)/2); g.rotation.y=-Math.atan2(dz,dx); return g; },
+  breaker(p){ // 3-pole live-tank CB on common frame
+    const g=new THREE.Group();
+    const frame=box(3,0.15,0.6,MAT.galv()); frame.position.y=1.2; g.add(frame);
+    for(const lx of [-0.9,0.9]){ const leg=box(0.12,1.2,0.5,MAT.galv()); leg.position.set(lx,0.6,0); g.add(leg); }
+    const mech=box(0.8,0.7,0.55,MAT.steel()); mech.position.set(0,0.85,0); g.add(mech);
+    for(let i=0;i<3;i++){
+      const pole=insulatorStack(1.5,0.12); pole.position.set(-1.1+i*1.1,1.28,0); g.add(pole);
+      const head=cyl(0.14,0.14,0.7,MAT.busAl()); head.rotation.z=Math.PI/2;
+      head.position.set(-1.1+i*1.1,2.95,0); g.add(head); }
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  disconnector(p){ // centre-break DS, 3 poles, open blades
+    const g=new THREE.Group();
+    const frame=box(3,0.12,0.5,MAT.galv()); frame.position.y=1.4; g.add(frame);
+    for(const lx of [-1.2,1.2]){ const leg=box(0.1,1.4,0.4,MAT.galv()); leg.position.set(lx,0.7,0); g.add(leg); }
+    for(let i=0;i<3;i++){
+      const px=-1.1+i*1.1;
+      for(const off of [-0.35,0.35]){
+        const ins=insulatorStack(1.0,0.09); ins.position.set(px,1.46,off); g.add(ins); }
+      const blade=box(0.06,0.06,0.65,MAT.busAl());
+      blade.position.set(px,2.5,0.18); blade.rotation.x=-Math.PI/5; g.add(blade);
+      const blade2=box(0.06,0.06,0.65,MAT.busAl());
+      blade2.position.set(px,2.5,-0.18); blade2.rotation.x=Math.PI/5; g.add(blade2); }
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  instrument(p){ // CT/VT — single tall insulator with head tank
+    const g=new THREE.Group();
+    const ped=box(0.5,1,0.5,MAT.galv()); ped.position.y=0.5; g.add(ped);
+    const ins=insulatorStack(1.8,0.13); ins.position.y=1; g.add(ins);
+    const head=cyl(0.3,0.25,0.6,MAT.steel()); head.position.y=3.1; g.add(head);
+    g.position.set(p.x,p.y,p.z); return g; },
+  arrester(p){ const g=new THREE.Group();
+    const ped=box(0.4,0.8,0.4,MAT.galv()); ped.position.y=0.4; g.add(ped);
+    const ins=insulatorStack(1.6,0.1); ins.position.y=0.8; g.add(ins);
+    const cap=cyl(0.12,0.12,0.15,MAT.busAl()); cap.position.y=2.5; g.add(cap);
+    g.position.set(p.x,p.y,p.z); return g; },
+  lightningmast(p){ const g=new THREE.Group(); const H=18;
+    const m=latticeColumn(H,0.7,MAT.galv()); g.add(m);
+    const tip=cyl(0.02,0.06,2.5,MAT.steel()); tip.position.y=H+1.25; g.add(tip);
+    g.position.set(p.x,p.y,p.z); return g; },
+  plinth(p){ const g=new THREE.Group();
+    const b=box(4,0.5,3,MAT.concrete()); b.position.y=0.25; g.add(b);
+    for(const rz of [-0.9,0.9]){ const rail=box(4,0.08,0.1,MAT.steel());
+      rail.position.set(0,0.54,rz); g.add(rail); }
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  bund(p){ // drag area: containment walls + gravel fill
+    const g=new THREE.Group(); const wh=0.8, t=0.25;
+    const fill=box(p.w-2*t,0.15,p.d-2*t,MAT.gravel()); fill.position.y=0.075; g.add(fill);
+    for(const s of [[p.w,t,0,-(p.d-t)/2],[p.w,t,0,(p.d-t)/2]]){
+      const w=box(s[0],wh,s[1],MAT.concrete()); w.position.set(s[2],wh/2,s[3]); g.add(w); }
+    for(const s of [[t,p.d-2*t,-(p.w-t)/2,0],[t,p.d-2*t,(p.w-t)/2,0]]){
+      const w=box(s[0],wh,s[1],MAT.concrete()); w.position.set(s[2],wh/2,s[3]); g.add(w); }
+    g.position.set(p.x,p.y,p.z); return g; },
+  firewall(p){ const dx=p.x2-p.x1,dz=p.z2-p.z1,len=Math.max(Math.hypot(dx,dz),GRID);
+    const H=Math.max(p.h,5);
+    const g=new THREE.Group();
+    const w=box(len,H,0.4,MAT.firewall()); w.position.y=H/2; g.add(w);
+    const cap=box(len+0.2,0.2,0.6,MAT.concrete()); cap.position.y=H+0.1; g.add(cap);
+    g.position.set((p.x1+p.x2)/2,p.y,(p.z1+p.z2)/2); g.rotation.y=-Math.atan2(dz,dx); return g; },
+  cabletrench(p){ const dx=p.x2-p.x1,dz=p.z2-p.z1,len=Math.max(Math.hypot(dx,dz),GRID);
+    const g=new THREE.Group();
+    for(const side of [-0.45,0.45]){ const w=box(len,0.5,0.12,MAT.concrete());
+      w.position.set(0,0.25,side); g.add(w); }
+    const bottom=box(len,0.08,0.9,MAT.trench()); bottom.position.y=0.04; g.add(bottom);
+    const n=Math.max(1,Math.round(len/1.2));
+    for(let i=0;i<n;i++){ const lid=box(len/n-0.06,0.07,1.02,MAT.concrete());
+      lid.position.set(-len/2+(i+0.5)*(len/n),0.53,0); g.add(lid); }
+    g.position.set((p.x1+p.x2)/2,p.y,(p.z1+p.z2)/2); g.rotation.y=-Math.atan2(dz,dx); return g; },
+  gravel(p){ const g=new THREE.Group();
+    const s=box(p.w,0.12,p.d,MAT.gravel()); s.position.y=0.06; g.add(s);
+    g.position.set(p.x,p.y,p.z); return g; },
+  groundgrid(p){ // drag area: buried earthing mesh shown as green grid
+    const g=new THREE.Group(); const m=MAT.copper();
+    const nx=Math.max(2,Math.round(p.w/3)+1), nz=Math.max(2,Math.round(p.d/3)+1);
+    for(let i=0;i<nx;i++){ const c=box(0.06,0.06,p.d,m);
+      c.position.set(-p.w/2+i*(p.w/(nx-1)),0.05,0); g.add(c); }
+    for(let j=0;j<nz;j++){ const c=box(p.w,0.06,0.06,m);
+      c.position.set(0,0.05,-p.d/2+j*(p.d/(nz-1))); g.add(c); }
+    g.position.set(p.x,p.y,p.z); return g; },
+  controlbuilding(p){ const g=new THREE.Group();
+    const b=box(10,3.5,5,mat(0xc8bfae)); b.position.y=1.75; g.add(b);
+    const roof=box(10.6,0.25,5.6,MAT.concrete()); roof.position.y=3.6; g.add(roof);
+    const door=box(0.06,2.2,1.1,mat(0x5a6a7a)); door.position.set(5.01,1.1,0); g.add(door);
+    for(const wx of [-3,-1,1,3]){ const win=box(0.06,1,1.4,mat(0xbfe3ff));
+      win.position.set(5.01,2,wx*0+0); win.position.z=wx; g.add(win); }
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  spmt(p){ // self-propelled modular transporter carrying a transformer tank
+    const g=new THREE.Group();
+    const deck=box(9,0.5,3,MAT.spmtRed()); deck.position.y=1.15; g.add(deck);
+    for(let i=0;i<6;i++) for(const wz of [-1.1,1.1]){
+      const ax=cyl(0.35,0.35,0.5,MAT.track()); ax.rotation.x=Math.PI/2;
+      ax.position.set(-3.5+i*1.4,0.45,wz); g.add(ax); }
+    const powerpack=box(1.4,1.1,2.6,MAT.steel()); powerpack.position.set(4.6,1.95,0); g.add(powerpack);
+    const tank=box(3.6,3,2.4,MAT.txf()); tank.position.set(-0.5,2.95,0); g.add(tank);
+    const cons=cyl(0.45,0.45,2.4,MAT.txf()); cons.rotation.z=Math.PI/2;
+    cons.position.set(-0.5,4.8,-0.7); g.add(cons);
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+  solid(p){ // drawn shape (rectangle/polygon) extruded upward, SketchUp-style
+    const shape = new THREE.Shape(p.points.map(q=>new THREE.Vector2(q[0], -q[1])));
+    const geo = new THREE.ExtrudeGeometry(shape, {depth:Math.max(p.h,0.1), bevelEnabled:false});
+    geo.rotateX(-Math.PI/2);
+    const m = new THREE.Mesh(geo, mat(p.color ? parseInt(p.color.slice(1),16) : 0xc9c2b8));
+    m.castShadow = m.receiveShadow = true;
+    const g = new THREE.Group(); g.add(m);
+    g.position.set(p.x,p.y,p.z); g.rotation.y = p.rot||0; return g; },
+  model(p){ // imported 3D model instance (e.g. from SketchUp 3D Warehouse)
+    const entry = modelLibrary.find(m=>m.id===p.model);
+    const g = new THREE.Group();
+    if(entry && entry.template){
+      const inst = cloneTemplate(entry.template);
+      inst.scale.setScalar(p.scale||1);
+      g.add(inst);
+    } else { // library entry missing — placeholder
+      const ph = box(2,2,2, mat(0xcc55cc, {transparent:true, opacity:0.6}));
+      ph.position.y=1; g.add(ph);
+    }
+    g.position.set(p.x,p.y,p.z); g.rotation.y=p.rot||0; return g; },
+};
+/* ---------------- Imported model library ---------------- */
+let modelLibrary = [];   // {id,name,ext,dataB64,scale,template}
+let nextModelId = 1;
+
+function cloneTemplate(t){
+  const c = t.clone(true);
+  c.traverse(o=>{
+    if(o.material) o.material = Array.isArray(o.material) ? o.material.map(m=>m.clone()) : o.material.clone();
+    if(o.isMesh){ o.castShadow = o.receiveShadow = true; }
+  });
+  return c;
+}
+function normalizeTemplate(g){
+  // center on XZ, rest on y=0; crude unit fix for models exported in mm/cm/inches
+  let bb = new THREE.Box3().setFromObject(g);
+  const size = bb.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  if(maxDim > 400) g.scale.multiplyScalar(0.0254);        // likely inches or mm
+  else if(maxDim > 120) g.scale.multiplyScalar(0.1);      // likely decimeters/odd
+  bb = new THREE.Box3().setFromObject(g);
+  const c = bb.getCenter(new THREE.Vector3());
+  const wrap = new THREE.Group();
+  g.position.set(-c.x, -bb.min.y, -c.z);
+  wrap.add(g);
+  return wrap;
+}
+function parseModel(ext, buf){
+  return new Promise((resolve,reject)=>{
+    try{
+      if(ext==='glb'||ext==='gltf'){
+        new THREE.GLTFLoader().parse(ext==='glb'?buf:new TextDecoder().decode(buf), '',
+          gltf=>resolve(gltf.scene), err=>reject(err));
+      } else if(ext==='dae'){
+        const res = new THREE.ColladaLoader().parse(new TextDecoder().decode(buf), '');
+        resolve(res.scene);
+      } else if(ext==='obj'){
+        resolve(new THREE.OBJLoader().parse(new TextDecoder().decode(buf)));
+      } else reject(new Error('Unsupported format: '+ext));
+    }catch(e){ reject(e); }
+  });
+}
+function bufToB64(buf){
+  const bytes=new Uint8Array(buf); let s='';
+  for(let i=0;i<bytes.length;i+=32768) s+=String.fromCharCode.apply(null, bytes.subarray(i,i+32768));
+  return btoa(s);
+}
+function b64ToBuf(b64){
+  const bin=atob(b64), bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return bytes.buffer;
+}
+async function addModelToLibrary(name, ext, buf, id, scale){
+  const raw = await parseModel(ext, buf);
+  raw.traverse(o=>{ if(o.isMesh){ o.castShadow=o.receiveShadow=true; } });
+  const entry = {
+    id: id || ('m'+(nextModelId++)),
+    name: name.replace(/\.[^.]+$/,'').slice(0,28),
+    ext, dataB64: bufToB64(buf), scale: scale||1,
+    template: normalizeTemplate(raw)
+  };
+  if(id){ // keep counter ahead of loaded ids
+    const n=parseInt(String(id).replace(/\D/g,''))||0; nextModelId=Math.max(nextModelId,n+1);
+  }
+  modelLibrary.push(entry);
+  renderModelList();
+  return entry;
+}
+function renderModelList(){
+  const list=document.getElementById('model-list'); list.innerHTML='';
+  modelLibrary.forEach(entry=>{
+    const b=document.createElement('button');
+    b.className='tool'; b.dataset.tool='model:'+entry.id;
+    b.innerHTML='<span class="sw" style="background:#cc55cc"></span>';
+    const label=document.createElement('span');
+    label.textContent=entry.name; label.style.flex='1'; label.style.overflow='hidden';
+    label.style.textOverflow='ellipsis'; label.style.whiteSpace='nowrap';
+    const sc=document.createElement('input');
+    sc.type='number'; sc.step='0.1'; sc.min='0.001'; sc.value=entry.scale;
+    sc.title='Placement scale';
+    sc.style.cssText='width:44px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:4px;font-size:11px;padding:2px 3px;';
+    sc.addEventListener('click',e=>e.stopPropagation());
+    sc.addEventListener('change',()=>{ entry.scale=parseFloat(sc.value)||1; });
+    const del=document.createElement('span');
+    del.textContent='✕'; del.className='del'; del.style.cssText='color:var(--muted);cursor:pointer;padding:0 2px;';
+    del.addEventListener('click',e=>{
+      e.stopPropagation();
+      const used=elements.filter(el=>el.type==='model'&&el.params.model===entry.id);
+      if(used.length && !confirm(used.length+' placed instance(s) will be deleted too. Remove model?')) return;
+      used.forEach(removeElement);
+      modelLibrary=modelLibrary.filter(m=>m!==entry);
+      if(currentTool==='model:'+entry.id) setTool('select');
+      renderModelList();
+    });
+    b.append(label,sc,del);
+    b.addEventListener('click',()=>setTool('model:'+entry.id));
+    list.appendChild(b);
+  });
+}
+document.getElementById('btn-import-model').onclick=()=>document.getElementById('model-input').click();
+document.getElementById('model-input').addEventListener('change',ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const ext=f.name.split('.').pop().toLowerCase();
+  const r=new FileReader();
+  r.onload=async ()=>{
+    try{
+      const entry=await addModelToLibrary(f.name, ext, r.result);
+      setTool('model:'+entry.id);
+    }catch(err){ alert('Could not import model: '+(err.message||err)); }
+  };
+  r.readAsArrayBuffer(f); ev.target.value='';
+});
+function toolBase(t){ return t.startsWith('model:') ? 'model' : t; }
+function buildMesh(tool, params){ return BUILDERS[toolBase(tool)](params); }
+
+function rebuildElement(el){
+  scene.remove(el.mesh);
+  el.mesh.traverse(o=>{
+    if(o.geometry) o.geometry.dispose();
+    if(o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose()); }
+  });
+  el.mesh = BUILDERS[el.type](el.params);
+  el.mesh.userData.elId = el.id;
+  scene.add(el.mesh);
+  applyPhaseVisibility();
+}
+
+/* ---------------- SketchUp-style draw & push/pull ----------------
+   drawState.mode: 'rect'     — first corner placed, dragging base
+                   'poly'     — collecting vertices
+                   'extrude'  — base fixed, mouse sets height, click confirms
+                   'pushpull' — dragging an existing element's height       */
+let drawState = null;
+const DRAW_TOOLS = new Set(['rect','poly','pushpull']);
+function drawColor(){ return document.getElementById('draw-color').value; }
+function snapH(v){ return Math.max(0.25, Math.round(v*4)/4); }
+
+function relPoints(pts){ // absolute [[x,z]..] -> centroid + relative points
+  let cx=0, cz=0;
+  pts.forEach(p=>{cx+=p[0]; cz+=p[1];});
+  cx/=pts.length; cz/=pts.length;
+  return {cx, cz, rel: pts.map(p=>[p[0]-cx, p[1]-cz])};
+}
+function solidPreview(pts, h){
+  if(pts.length<3) return null;
+  const {cx,cz,rel}=relPoints(pts);
+  return BUILDERS.solid({x:cx,z:cz,y:levelY(),points:rel,h,color:drawColor()});
+}
+function enterExtrude(pts, ev){
+  const {cx,cz,rel}=relPoints(pts);
+  drawState={mode:'extrude', cx, cz, rel, h:1, startY:ev.clientY};
+  setGhost(BUILDERS.solid({x:cx,z:cz,y:levelY(),points:rel,h:1,color:drawColor()}));
+  document.getElementById('hint').textContent='Move mouse up/down to set height · click to confirm · Esc cancels';
+}
+function confirmExtrude(){
+  addElement('solid', {x:drawState.cx, z:drawState.cz, y:levelY(),
+    points:drawState.rel, h:drawState.h, color:drawColor(), rot:0}, activePhase);
+  drawState=null; setGhost(null);
+  setTool(currentTool); // restore hint
+}
+function cancelDraw(){ drawState=null; setGhost(null); if(DRAW_TOOLS.has(currentTool)) setTool(currentTool); }
+
+function handleDrawMouseDown(ev){
+  if(drawState && drawState.mode==='extrude'){ confirmExtrude(); return; }
+  const g=pickGround(ev);
+  if(currentTool==='rect'){
+    if(!g) return;
+    drawState={mode:'rect', a:g};
+    document.getElementById('hint').textContent='Drag to the opposite corner, release to set the base';
+  } else if(currentTool==='poly'){
+    if(!g) return;
+    if(!drawState) drawState={mode:'poly', pts:[[g.x,g.z]]};
+    else {
+      const first=drawState.pts[0];
+      if(drawState.pts.length>=3 && Math.hypot(g.x-first[0],g.z-first[1])<0.6){ enterExtrude(drawState.pts, ev); return; }
+      drawState.pts.push([g.x,g.z]);
+    }
+    document.getElementById('hint').textContent=
+      drawState.pts.length<3 ? 'Click to add corners (min 3)' :
+      'Click more corners · click the first corner or press Enter to close the shape';
+  } else if(currentTool==='pushpull'){
+    const el=pickElement(ev);
+    if(el && typeof el.params.h==='number'){
+      drawState={mode:'pushpull', el, h0:el.params.h, startY:ev.clientY};
+      select(el);
+      document.getElementById('hint').textContent='Drag up/down to change height, release to finish';
+    }
+  }
+}
+function handleDrawMove(ev){
+  if(drawState.mode==='rect'){
+    const g=pickGround(ev); if(!g) return;
+    const a=drawState.a;
+    if(Math.abs(g.x-a.x)<0.5||Math.abs(g.z-a.z)<0.5){ setGhost(null); return; }
+    setGhost(solidPreview([[a.x,a.z],[g.x,a.z],[g.x,g.z],[a.x,g.z]], 0.15));
+  } else if(drawState.mode==='poly'){
+    const g=pickGround(ev); if(!g) return;
+    const pts=[...drawState.pts,[g.x,g.z]];
+    setGhost(pts.length>=3 ? solidPreview(pts,0.15) : null);
+  } else if(drawState.mode==='extrude'){
+    drawState.h=snapH((drawState.startY-ev.clientY)*(cam.dist/500)+1);
+    setGhost(BUILDERS.solid({x:drawState.cx,z:drawState.cz,y:levelY(),
+      points:drawState.rel,h:drawState.h,color:drawColor()}));
+  } else if(drawState.mode==='pushpull'){
+    drawState.el.params.h=snapH(drawState.h0+(drawState.startY-ev.clientY)*(cam.dist/500));
+    rebuildElement(drawState.el);
+  }
+}
+function handleDrawMouseUp(ev){
+  if(drawState.mode==='rect'){
+    const g=pickGround(ev);
+    const a=drawState.a;
+    if(g && Math.abs(g.x-a.x)>=1 && Math.abs(g.z-a.z)>=1){
+      enterExtrude([[a.x,a.z],[g.x,a.z],[g.x,g.z],[a.x,g.z]], ev);
+    } else { cancelDraw(); }
+  } else if(drawState.mode==='pushpull'){
+    drawState=null;
+    setTool(currentTool);
+  }
+}
+
+const DRAG_TOOLS = new Set(['wall','beam','barrier','fence','slab','excavation',
+  'gantry','busbar','firewall','cabletrench','gravel','groundgrid','bund']);
+const AREA_TOOLS = new Set(['slab','excavation','gravel','groundgrid','bund']);
+const GROUND_ONLY = new Set(['crane','mobilecrane','excavator','truck','pump','excavation','container','fence','footing',
+  'transformer','gantry','busbar','breaker','disconnector','instrument','arrester','lightningmast',
+  'plinth','bund','firewall','cabletrench','gravel','groundgrid','controlbuilding','spmt']);
+
+// ---------- Element management ----------
+function addElement(type, params, phase){
+  const el = {id:nextId++, type, params, phase};
+  el.mesh = BUILDERS[type](params);
+  el.mesh.userData.elId = el.id;
+  scene.add(el.mesh);
+  elements.push(el);
+  applyPhaseVisibility(); updateStats();
+  return el;
+}
+function removeElement(el){
+  scene.remove(el.mesh);
+  el.mesh.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); });
+  elements = elements.filter(e=>e!==el);
+  if(selected===el) select(null);
+  updateStats();
+}
+function findElByObject(obj){
+  let o=obj;
+  while(o){ if(o.userData.elId) return elements.find(e=>e.id===o.userData.elId); o=o.parent; }
+  return null;
+}
+
+// ---------- Phase visibility & tinting ----------
+function applyPhaseVisibility(){
+  for(const el of elements){
+    const vis = el.phase <= viewPhase;
+    el.mesh.visible = vis;
+    const isCurrent = el.phase === viewPhase;
+    const tint = (selected===el) ? 0x2255aa : (isCurrent ? 0x1a1408 : 0x000000);
+    el.mesh.traverse(o=>{
+      if(!o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for(const m of mats){ if(m.emissive) m.emissive.setHex(tint); }
+    });
+  }
+}
+
+// ---------- Ghost preview ----------
+let ghost = null;
+function setGhost(mesh){
+  if(ghost){ scene.remove(ghost); }
+  ghost = mesh;
+  if(ghost){
+    ghost.traverse(o=>{ if(o.material){
+      const cl=m=>{ const c=m.clone(); c.transparent=true; c.opacity=0.5; return c; };
+      o.material=Array.isArray(o.material)?o.material.map(cl):cl(o.material);
+      o.castShadow=false; }});
+    scene.add(ghost);
+  }
+}
+
+// ---------- Input ----------
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let dragStart = null;         // {x,z} snapped, for drag tools
+let orbiting=false, panning=false, lastMx=0, lastMy=0;
+let placeRot = 0;
+let movingEl = null;
+
+function snap(v){ return Math.round(v/GRID)*GRID; }
+function pickGround(ev){
+  mouse.x = (ev.clientX/innerWidth)*2-1;
+  mouse.y = -(ev.clientY/innerHeight)*2+1;
+  ray.setFromCamera(mouse,camera);
+  const hit = ray.intersectObject(buildPlane)[0];
+  if(!hit) return null;
+  const x=snap(hit.point.x), z=snap(hit.point.z);
+  if(Math.abs(x)>WORLD||Math.abs(z)>WORLD) return null;
+  return {x,z};
+}
+function pickElement(ev){
+  mouse.x = (ev.clientX/innerWidth)*2-1;
+  mouse.y = -(ev.clientY/innerHeight)*2+1;
+  ray.setFromCamera(mouse,camera);
+  const hits = ray.intersectObjects(elements.filter(e=>e.mesh.visible).map(e=>e.mesh), true);
+  return hits.length ? findElByObject(hits[0].object) : null;
+}
+function levelY(){ return currentLevel*LEVEL_H; }
+
+function makeParams(tool, a, b){
+  const type = toolBase(tool);
+  if(type==='model'){
+    const id = tool.slice(6);
+    const entry = modelLibrary.find(m=>m.id===id);
+    return {x:a.x, z:a.z, y:levelY(), rot:placeRot, model:id, scale:entry?entry.scale:1};
+  }
+  const y = GROUND_ONLY.has(type) ? 0 : levelY();
+  if(AREA_TOOLS.has(type)){
+    const w=Math.max(Math.abs(b.x-a.x),GRID), d=Math.max(Math.abs(b.z-a.z),GRID);
+    return {x:(a.x+b.x)/2, z:(a.z+b.z)/2, y, w, d};
+  }
+  if(DRAG_TOOLS.has(type)) return {x1:a.x,z1:a.z,x2:b.x,z2:b.z,y,h:elemHeight};
+  return {x:a.x,z:a.z,y,h:elemHeight,rot:placeRot};
+}
+
+renderer.domElement.addEventListener('contextmenu', e=>e.preventDefault());
+
+renderer.domElement.addEventListener('mousedown', ev=>{
+  lastMx=ev.clientX; lastMy=ev.clientY;
+  if(ev.button===2){ orbiting=true; return; }
+  if(ev.button===1 || (ev.button===0 && ev.shiftKey)){ panning=true; ev.preventDefault(); return; }
+  if(ev.button!==0) return;
+
+  if(DRAW_TOOLS.has(currentTool) || (drawState && drawState.mode==='extrude')){
+    handleDrawMouseDown(ev); return;
+  }
+  if(currentTool==='select'){
+    const el=pickElement(ev);
+    select(el);
+    if(el){ movingEl = el; }
+    return;
+  }
+  if(currentTool==='delete'){
+    const el=pickElement(ev); if(el) removeElement(el);
+    return;
+  }
+  const g=pickGround(ev); if(!g) return;
+  if(DRAG_TOOLS.has(currentTool)){ dragStart=g; }
+  else {
+    addElement(toolBase(currentTool), makeParams(currentTool,g,g), activePhase);
+  }
+});
+
+renderer.domElement.addEventListener('mousemove', ev=>{
+  const dx=ev.clientX-lastMx, dy=ev.clientY-lastMy;
+  if(orbiting){
+    cam.theta += dx*0.006;
+    cam.phi = Math.min(Math.PI/2.05, Math.max(0.15, cam.phi - dy*0.006));
+    updateCamera(); lastMx=ev.clientX; lastMy=ev.clientY; return;
+  }
+  if(panning){
+    const s=cam.dist*0.0016;
+    const fwd=new THREE.Vector3(-Math.cos(cam.theta),0,-Math.sin(cam.theta));
+    const rgt=new THREE.Vector3(-Math.sin(cam.theta),0,Math.cos(cam.theta));
+    cam.target.addScaledVector(rgt, dx*s).addScaledVector(fwd, -dy*s);
+    cam.target.x=Math.max(-WORLD,Math.min(WORLD,cam.target.x));
+    cam.target.z=Math.max(-WORLD,Math.min(WORLD,cam.target.z));
+    updateCamera(); lastMx=ev.clientX; lastMy=ev.clientY; return;
+  }
+  lastMx=ev.clientX; lastMy=ev.clientY;
+
+  if(movingEl){
+    const g=pickGround(ev);
+    if(g){
+      const p=movingEl.params;
+      if('x' in p){ p.x=g.x; p.z=g.z; movingEl.mesh.position.x=g.x; movingEl.mesh.position.z=g.z; }
+      else { // drag-type: translate both endpoints
+        const cx=(p.x1+p.x2)/2, cz=(p.z1+p.z2)/2, ox=g.x-cx, oz=g.z-cz;
+        p.x1+=ox;p.x2+=ox;p.z1+=oz;p.z2+=oz;
+        movingEl.mesh.position.x+=ox; movingEl.mesh.position.z+=oz;
+      }
+    }
+    return;
+  }
+
+  if(drawState){ handleDrawMove(ev); return; }
+  // ghost preview
+  if(currentTool==='select'||currentTool==='delete'||DRAW_TOOLS.has(currentTool)){ setGhost(null); return; }
+  const g=pickGround(ev);
+  if(!g){ setGhost(null); return; }
+  const end = dragStart ? g : g;
+  const start = dragStart || g;
+  try{
+    setGhost(buildMesh(currentTool, makeParams(currentTool,start,end)));
+  }catch(e){ setGhost(null); }
+});
+
+addEventListener('mouseup', ev=>{
+  if(ev.button===2) orbiting=false;
+  if(ev.button===1||panning) panning=false;
+  if(ev.button===0){
+    movingEl=null;
+    if(drawState && (drawState.mode==='rect'||drawState.mode==='pushpull')){
+      handleDrawMouseUp(ev); return;
+    }
+    if(dragStart){
+      const g=pickGround(ev);
+      if(g && (g.x!==dragStart.x || g.z!==dragStart.z || AREA_TOOLS.has(currentTool))){
+        addElement(currentTool, makeParams(currentTool,dragStart,g), activePhase);
+      } else if(g){
+        // single click with drag tool of zero length: place 1-unit
+        const b={x:g.x+GRID,z:g.z};
+        addElement(currentTool, makeParams(currentTool,g,b), activePhase);
+      }
+      dragStart=null; setGhost(null);
+    }
+  }
+});
+
+renderer.domElement.addEventListener('wheel', ev=>{
+  ev.preventDefault();
+  cam.dist = Math.max(8, Math.min(150, cam.dist * (ev.deltaY>0 ? 1.1 : 0.9)));
+  updateCamera();
+},{passive:false});
+
+addEventListener('keydown', ev=>{
+  if(ev.target.tagName==='INPUT') return;
+  if(ev.key==='r'||ev.key==='R'){
+    placeRot += Math.PI/2;
+    if(selected){ selected.params.rot=(selected.params.rot||0)+Math.PI/2; selected.mesh.rotation.y=selected.params.rot; }
+  }
+  if(ev.key==='Delete'||ev.key==='Backspace'){ if(selected) removeElement(selected); }
+  if(ev.key==='Enter' && drawState && drawState.mode==='poly' && drawState.pts.length>=3){
+    enterExtrude(drawState.pts, {clientY:lastMy});
+  }
+  if(ev.key==='Escape'){
+    if(drawState){ cancelDraw(); }
+    else { setTool('select'); }
+    dragStart=null; setGhost(null);
+  }
+  if(ev.key==='PageUp') setLevel(currentLevel+1);
+  if(ev.key==='PageDown') setLevel(currentLevel-1);
+});
+
+// ---------- Selection ----------
+function select(el){ selected=el; applyPhaseVisibility(); }
+
+// ---------- Tools UI ----------
+function setTool(t){
+  if(drawState && !DRAW_TOOLS.has(t)) drawState=null;
+  currentTool=t;
+  document.querySelectorAll('.tool').forEach(b=>b.classList.toggle('active', b.dataset.tool===t));
+  setGhost(null);
+  const hints={
+    rect:'Drag a rectangle on the grid, release, then move the mouse up and click to set the height',
+    poly:'Click corners on the grid (min 3) · click the first corner or press Enter to close, then pull up',
+    pushpull:'Click and drag any wall, column, solid, firewall… up or down to change its height',
+    select:'Click an element to select · drag to move · R rotates · Del deletes',
+    delete:'Click elements to demolish them',
+    wall:'Drag along the grid to draw a wall', slab:'Drag a rectangle to pour a slab',
+    beam:'Drag between two supports', barrier:'Drag to place a run of safety barriers',
+    fence:'Drag to place hoarding fencing', excavation:'Drag a rectangle to excavate',
+  };
+  document.getElementById('hint').textContent = hints[t] || 'Click on the grid to place · R rotates before placing';
+}
+document.querySelectorAll('.tool').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
+
+// ---------- Levels ----------
+function setLevel(l){
+  currentLevel=Math.max(-1,Math.min(20,l));
+  buildPlane.position.y=levelY();
+  levelGrid.position.y=levelY()+0.02;
+  levelGrid.visible = currentLevel!==0;
+  document.getElementById('lvl-num').textContent=currentLevel;
+  document.getElementById('lvl-elev').textContent=levelY().toFixed(1);
+}
+document.getElementById('btn-lvl-up').onclick=()=>setLevel(currentLevel+1);
+document.getElementById('btn-lvl-down').onclick=()=>setLevel(currentLevel-1);
+
+// ---------- Height slider ----------
+document.getElementById('hslider').addEventListener('input',e=>{
+  elemHeight=parseFloat(e.target.value);
+  document.getElementById('hval').textContent=elemHeight.toFixed(1);
+});
+
+// ---------- Phases UI ----------
+function renderPhases(){
+  const list=document.getElementById('phase-list'); list.innerHTML='';
+  phases.forEach((ph,i)=>{
+    const row=document.createElement('div');
+    row.className='phase-row'+(i===activePhase?' active':'');
+    const dot=document.createElement('span'); dot.className='dot';
+    dot.style.background=PHASE_COLORS[i%PHASE_COLORS.length];
+    const inp=document.createElement('input'); inp.value=ph.name;
+    inp.addEventListener('change',()=>{ph.name=inp.value;updateTimelineLabel();});
+    inp.addEventListener('click',e=>e.stopPropagation());
+    const del=document.createElement('span'); del.className='del'; del.textContent='✕';
+    del.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(phases.length<=1) return;
+      if(elements.some(el=>el.phase===i) && !confirm('Elements exist in this phase — they will move to the previous phase. Delete phase?')) return;
+      elements.forEach(el=>{ if(el.phase===i) el.phase=Math.max(0,i-1); else if(el.phase>i) el.phase--; });
+      phases.splice(i,1);
+      if(activePhase>=phases.length) activePhase=phases.length-1;
+      if(viewPhase>=phases.length) viewPhase=phases.length-1;
+      renderPhases(); syncTimeline(); applyPhaseVisibility();
+    });
+    row.append(dot,inp,del);
+    row.addEventListener('click',()=>{
+      activePhase=i; viewPhase=Math.max(viewPhase,i);
+      renderPhases(); syncTimeline(); applyPhaseVisibility();
+    });
+    list.appendChild(row);
+  });
+}
+document.getElementById('btn-add-phase').onclick=()=>{
+  phases.push({name:`${phases.length+1}. New phase`});
+  activePhase=phases.length-1; viewPhase=phases.length-1;
+  renderPhases(); syncTimeline(); applyPhaseVisibility();
+};
+
+// ---------- Timeline ----------
+const slider=document.getElementById('phase-slider');
+function syncTimeline(){
+  slider.max=phases.length-1; slider.value=viewPhase; updateTimelineLabel();
+}
+function updateTimelineLabel(){
+  document.getElementById('phase-label').textContent=phases[viewPhase]?phases[viewPhase].name:'—';
+}
+slider.addEventListener('input',()=>{
+  viewPhase=parseInt(slider.value); updateTimelineLabel(); applyPhaseVisibility();
+});
+document.getElementById('btn-play').onclick=()=>{
+  const btn=document.getElementById('btn-play');
+  if(playing){ playing=false; clearInterval(playTimer); btn.textContent='▶'; return; }
+  playing=true; btn.textContent='⏸';
+  viewPhase=-1;
+  playTimer=setInterval(()=>{
+    viewPhase++;
+    if(viewPhase>=phases.length){ playing=false; clearInterval(playTimer); btn.textContent='▶'; viewPhase=phases.length-1; }
+    syncTimeline(); applyPhaseVisibility();
+  }, 1400);
+};
+
+// ---------- Stats ----------
+function updateStats(){
+  const byType={};
+  elements.forEach(e=>byType[e.type]=(byType[e.type]||0)+1);
+  document.getElementById('stats').innerHTML =
+    `Elements: <b style="color:var(--text)">${elements.length}</b><br>` +
+    Object.entries(byType).map(([t,n])=>`${t}: ${n}`).join('<br>');
+}
+updateStats();
+
+// ---------- Save / Load / Snapshot / Clear ----------
+document.getElementById('btn-save').onclick=()=>{
+  const data={version:2, phases,
+    models:modelLibrary.map(m=>({id:m.id,name:m.name,ext:m.ext,scale:m.scale,data:m.dataB64})),
+    elements:elements.map(e=>({type:e.type,params:e.params,phase:e.phase}))};
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,1)],{type:'application/json'}));
+  a.download='construction-plan.json'; a.click();
+};
+document.getElementById('btn-load').onclick=()=>document.getElementById('file-input').click();
+document.getElementById('file-input').addEventListener('change',ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=async ()=>{
+    try{
+      const data=JSON.parse(r.result);
+      [...elements].forEach(removeElement);
+      modelLibrary=[]; renderModelList();
+      phases=data.phases&&data.phases.length?data.phases:[{name:'Phase 1'}];
+      activePhase=0; viewPhase=phases.length-1;
+      for(const m of (data.models||[])){
+        try{ await addModelToLibrary(m.name, m.ext, b64ToBuf(m.data), m.id, m.scale); }
+        catch(err){ console.warn('Model failed to load:', m.name, err); }
+      }
+      (data.elements||[]).forEach(e=>addElement(e.type,e.params,e.phase||0));
+      renderPhases(); syncTimeline(); applyPhaseVisibility();
+    }catch(err){ alert('Could not read file: '+err.message); }
+  };
+  r.readAsText(f); ev.target.value='';
+});
+document.getElementById('btn-shot').onclick=()=>{
+  const a=document.createElement('a');
+  a.href=renderer.domElement.toDataURL('image/png');
+  a.download='constructsim-snapshot.png'; a.click();
+};
+document.getElementById('btn-clear').onclick=()=>{
+  if(elements.length && !confirm('Delete all '+elements.length+' elements?')) return;
+  [...elements].forEach(removeElement);
+};
+
+// ---------- Resize & loop ----------
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+(function loop(){ requestAnimationFrame(loop); renderer.render(scene,camera); })();
+
+// ---------- Init ----------
+renderPhases(); syncTimeline(); setLevel(0); setTool('wall'); applyPhaseVisibility();
+</script>
+</body>
+</html>

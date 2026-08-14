@@ -1,0 +1,25 @@
+{
+  "hosting": {
+    "public": "construction-planner",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "main.js",
+      "package.json",
+      "package-lock.json",
+      "dist/**",
+      "*.ps1"
+    ],
+    "cleanUrls": true,
+    "redirects": [
+      { "source": "/", "destination": "/flowchart", "type": 302 }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(html|svg)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
+    ]
+  }
+}

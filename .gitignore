@@ -1,0 +1,17 @@
+# Dependencies & build output (regenerated with `npm install` / `npm run dist`)
+node_modules/
+dist/
+
+# Local editor/tool settings
+.claude/settings.local.json
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Your own saved work stays local (delete these lines if you want it version-controlled)
+Saved Files/Diagrams/*
+Saved Files/Boards/*
+Saved Files/Exports/*
+!Saved Files/**/.keep

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "constructsim",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8471", "--directory", "construction-planner"],
+      "port": 8471
+    }
+  ]
+}

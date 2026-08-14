@@ -1,0 +1,29 @@
+{
+  "name": "constructsim",
+  "productName": "ConstructSim",
+  "version": "1.0.0",
+  "description": "3D construction methodology planner with substation toolkit",
+  "main": "main.js",
+  "author": "Ihza Hafiz Driatama",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.ihza.constructsim",
+    "productName": "ConstructSim",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "index.html", "flowchart.html", "whiteboard.html", "home.html", "assets/**/*", "lib/**/*"],
+    "win": { "target": "nsis", "signAndEditExecutable": false },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}
