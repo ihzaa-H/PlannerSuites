@@ -57,6 +57,27 @@ npm start
 
 Build a Windows installer with `npm run dist`.
 
+## Publishing changes
+
+The site is live at **https://ihzaa-h.github.io/PlannerSuites/** and redeploys
+automatically on every push to `main`.
+
+GitHub Pages serves pages with a fixed `Cache-Control: max-age=600` and does not
+allow custom headers, so browsers can hold a stale copy after a deploy. To avoid
+that, every page carries a build id and compares it against `version.json` on
+load, reloading itself once if a newer build is live.
+
+Before committing a change you want people to see, refresh the build id:
+
+```bash
+python scripts/stamp_build.py
+```
+
+Then commit and push as usual. (Stamping happens at commit time rather than in
+the workflow because GitHub also runs its own `pages-build-deployment` builder,
+which publishes the raw repository content and would overwrite a build-time
+stamp.)
+
 ## Repository layout
 
 ```
