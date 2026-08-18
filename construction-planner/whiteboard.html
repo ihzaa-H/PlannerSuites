@@ -475,6 +475,7 @@ function onDown(e){
       lastDown={t:now,x:pt.x,y:pt.y,id:hit.id};
       if(isDbl && !e.shiftKey && TEXTABLE.includes(hit.type)){
         lastDown.t=0;                       // consume so a third click doesn't retrigger
+        e.preventDefault();                 // keep mousedown's default focus handling
         drag=null;selectOnly(hit.id);startEdit(hit);return;
       }
       if(e.shiftKey){selection.has(hit.id)?selection.delete(hit.id):selection.add(hit.id);}
@@ -571,6 +572,7 @@ $("zoomlabel").onclick=()=>{view={x:0,y:0,k:1};applyView();render();};
 
 /* ---------- text editing ---------- */
 let editing=null;
+let editorOpening=false;   // suppress the blur fired while the editor is being opened
 function selectAllInEditor(ed){
   const r=document.createRange();r.selectNodeContents(ed);
   const s=window.getSelection();s.removeAllRanges();s.addRange(r);
@@ -591,10 +593,18 @@ function startEdit(it){
   ed.style.justifyContent=isLeft?"flex-start":"center";   // vertical centring matches the rendered label
   ed.style.fontWeight=(it.type==='sticky'||it.bold)?"600":"400";
   render();                                               // hides the underlying label
-  ed.focus();selectAllInEditor(ed);
+  // Focus after the current event completes: a real mousedown's default action
+  // moves focus, which would blur the editor and commit it immediately.
+  editorOpening=true;
+  // setTimeout rather than requestAnimationFrame: rAF does not fire in a hidden
+  // or background tab, which would leave the editor unfocused.
+  setTimeout(()=>{
+    ed.focus({preventScroll:true});selectAllInEditor(ed);
+    setTimeout(()=>{editorOpening=false;},0);
+  },0);
 }
 const wbEditor=$("editor");
-wbEditor.addEventListener("blur",commitEdit);
+wbEditor.addEventListener("blur",()=>{if(editorOpening)return;commitEdit();});
 wbEditor.addEventListener("keydown",e=>{
   e.stopPropagation();
   if(e.key==="Escape"){e.preventDefault();cancelEdit();return;}
@@ -615,7 +625,8 @@ function commitEdit(){
   render();updateToolbar();
 }
 const TEXTABLE=['sticky','text','rect','ellipse','poly'];
-svg.addEventListener("dblclick",e=>{const pt=screenToWorld(e.clientX,e.clientY);const it=itemAt(pt);if(it&&TEXTABLE.includes(it.type)){selectOnly(it.id);startEdit(it);}});
+svg.addEventListener("dblclick",e=>{const pt=screenToWorld(e.clientX,e.clientY);const it=itemAt(pt);
+  if(it&&TEXTABLE.includes(it.type)){if(editing&&editing.id===it.id)return;selectOnly(it.id);startEdit(it);}});
 
 /* ---------- selection helpers ---------- */
 function selectOnly(id){selection.clear();selection.add(id);render();updateInspectorBar();}
@@ -1009,7 +1020,7 @@ window.addEventListener("resize",applyView);
    GitHub Pages forces Cache-Control: max-age=600 and does not allow custom
    headers, so a browser can hold a stale page. Each deploy stamps BUILD_ID and
    writes ../version.json; if they differ we reload once (guarded against loops). */
-window.__BUILD_ID__="20260818-014930";
+window.__BUILD_ID__="20260818-020129";
 (function(){
   if(location.protocol==="file:")return;                 // portable/offline use
   if(window.__BUILD_ID__==="__BUILD"+"_ID__")return;      // not a deployed build (local dev)

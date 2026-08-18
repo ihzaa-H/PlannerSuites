@@ -921,6 +921,7 @@ function onDown(e){
     lastDown={t:now,x:pt.x,y:pt.y,id};
     if(isDbl && !e.shiftKey){
       lastDown.t=0;                        // consume so a third click doesn't retrigger
+      e.preventDefault();                  // keep mousedown's default focus handling
       drag=null;const n=getNode(id);
       if(n){selection.clear();selEdges.clear();selection.add(id);render();updateInspector();startEdit(n);}
       return;
@@ -1141,11 +1142,14 @@ $("zoomlabel").onclick=()=>{view.k=1;view.x=0;view.y=0;applyView();render();};
 /* ---------------- Double-click: edit text ---------------- */
 svg.addEventListener("dblclick",e=>{
   const nodeEl=e.target.closest?.(".node");
-  if(nodeEl){startEdit(getNode(nodeEl.getAttribute("data-id")));return;}
+  if(nodeEl){const nid=nodeEl.getAttribute("data-id");
+    if(editing&&editing.type==="node"&&editing.id===nid)return;
+    startEdit(getNode(nid));return;}
   const edgeEl=e.target.closest?.("[data-edge]");
   if(edgeEl){startEditEdge(edgeEl.getAttribute("data-edge"));return;}
 });
 let editing=null;
+let editorOpening=false;   // suppress the blur fired while the editor is being opened
 function selectAllInEditor(ed){
   const r=document.createRange();r.selectNodeContents(ed);
   const s=window.getSelection();s.removeAllRanges();s.addRange(r);
@@ -1165,7 +1169,15 @@ function startEdit(n){
   ed.style.textAlign=isC?"left":(n.align||"center");
   ed.style.justifyContent=isC?"flex-start":"center"; // vertical centering (flex column)
   render();                        // hide the shape's own text underneath
-  ed.focus();selectAllInEditor(ed);
+  // Focus after the current event completes: a real mousedown's default action
+  // moves focus, which would blur the editor and commit it immediately.
+  editorOpening=true;
+  // setTimeout rather than requestAnimationFrame: rAF does not fire in a hidden
+  // or background tab, which would leave the editor unfocused.
+  setTimeout(()=>{
+    ed.focus({preventScroll:true});selectAllInEditor(ed);
+    setTimeout(()=>{editorOpening=false;},0);
+  },0);
 }
 /* caret helpers (editor is a single plain-text node, so offsets are exact) */
 function caretOffset(el){
@@ -1216,10 +1228,16 @@ function startEditEdge(id){
   ed.style.textAlign="center";ed.style.justifyContent="center";
   ed.style.background="#ffffff";
   render();
-  ed.focus();selectAllInEditor(ed);
+  editorOpening=true;
+  // setTimeout rather than requestAnimationFrame: rAF does not fire in a hidden
+  // or background tab, which would leave the editor unfocused.
+  setTimeout(()=>{
+    ed.focus({preventScroll:true});selectAllInEditor(ed);
+    setTimeout(()=>{editorOpening=false;},0);
+  },0);
 }
 const editorEl=$("editor");
-editorEl.addEventListener("blur",commitEdit);
+editorEl.addEventListener("blur",()=>{if(editorOpening)return;commitEdit();});
 editorEl.addEventListener("keydown",e=>{
   e.stopPropagation();                                  // keep global shortcuts out while typing
   if(e.key==="Tab"){e.preventDefault();editorLineOp(!e.shiftKey);return;}          // demote / promote line
@@ -2030,7 +2048,7 @@ window.addEventListener("beforeunload",()=>{try{localStorage.setItem(LSKEY,seria
    GitHub Pages forces Cache-Control: max-age=600 and does not allow custom
    headers, so a browser can hold a stale page. Each deploy stamps BUILD_ID and
    writes ../version.json; if they differ we reload once (guarded against loops). */
-window.__BUILD_ID__="20260818-014930";
+window.__BUILD_ID__="20260818-020129";
 (function(){
   if(location.protocol==="file:")return;                 // portable/offline use
   if(window.__BUILD_ID__==="__BUILD"+"_ID__")return;      // not a deployed build (local dev)
