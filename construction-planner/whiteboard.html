@@ -438,6 +438,10 @@ function addTextItem(x,y){const it={id:uid(),type:'text',x:x,y:y-16,w:220,h:40,t
 
 /* ---------- pointer interaction ---------- */
 let drag=null,spaceDown=false;
+// Manual double-click detection. render() rebuilds the SVG on every mousedown,
+// so the two clicks of a real double-click land on different DOM nodes and the
+// browser's own dblclick becomes unreliable. Track it ourselves instead.
+let lastDown={t:0,x:0,y:0,id:null};
 svg.addEventListener("mousedown",onDown);
 window.addEventListener("mousemove",onMove);
 window.addEventListener("mouseup",onUp);
@@ -465,6 +469,14 @@ function onDown(e){
   if(tool==='select'){
     const hit=itemAt(pt);
     if(hit){
+      const now=performance.now();
+      const isDbl = lastDown.id===hit.id && (now-lastDown.t)<450 &&
+                    Math.hypot(pt.x-lastDown.x,pt.y-lastDown.y)<10/view.k;
+      lastDown={t:now,x:pt.x,y:pt.y,id:hit.id};
+      if(isDbl && !e.shiftKey && TEXTABLE.includes(hit.type)){
+        lastDown.t=0;                       // consume so a third click doesn't retrigger
+        drag=null;selectOnly(hit.id);startEdit(hit);return;
+      }
       if(e.shiftKey){selection.has(hit.id)?selection.delete(hit.id):selection.add(hit.id);}
       else if(!selection.has(hit.id)){selection.clear();selection.add(hit.id);}
       const orig={};selection.forEach(id=>orig[id]=snapItem(getItem(id)));
@@ -997,7 +1009,7 @@ window.addEventListener("resize",applyView);
    GitHub Pages forces Cache-Control: max-age=600 and does not allow custom
    headers, so a browser can hold a stale page. Each deploy stamps BUILD_ID and
    writes ../version.json; if they differ we reload once (guarded against loops). */
-window.__BUILD_ID__="20260814-092606";
+window.__BUILD_ID__="20260818-014930";
 (function(){
   if(location.protocol==="file:")return;                 // portable/offline use
   if(window.__BUILD_ID__==="__BUILD"+"_ID__")return;      // not a deployed build (local dev)

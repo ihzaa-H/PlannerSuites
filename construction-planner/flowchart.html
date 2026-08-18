@@ -845,6 +845,10 @@ function selectEdge(id,add){if(!add){selection.clear();selEdges.clear();}selEdge
 
 /* ---------------- Interaction: pointer on stage ---------------- */
 let drag=null; // {mode, ...}
+// Manual double-click detection: render() rebuilds the SVG on mousedown, so the
+// two clicks of a real double-click hit different DOM nodes and the browser's
+// own dblclick becomes unreliable. Track it ourselves.
+let lastDown={t:0,x:0,y:0,id:null};
 let spaceDown=false;
 let hoverPortsId=null;
 
@@ -911,6 +915,16 @@ function onDown(e){
     const id=nodeEl.getAttribute("data-id");
     // format painter armed -> paint this shape instead of selecting/moving
     if(styleClip){ paintOnto(id); return; }
+    const now=performance.now();
+    const isDbl = lastDown.id===id && (now-lastDown.t)<450 &&
+                  Math.hypot(pt.x-lastDown.x,pt.y-lastDown.y)<10/view.k;
+    lastDown={t:now,x:pt.x,y:pt.y,id};
+    if(isDbl && !e.shiftKey){
+      lastDown.t=0;                        // consume so a third click doesn't retrigger
+      drag=null;const n=getNode(id);
+      if(n){selection.clear();selEdges.clear();selection.add(id);render();updateInspector();startEdit(n);}
+      return;
+    }
     if(e.shiftKey){
       if(selection.has(id))selection.delete(id);else selection.add(id);
       expandGroups([...selection]).forEach(x=>selection.add(x));
@@ -921,10 +935,9 @@ function onDown(e){
       expandGroups([id]).forEach(x=>selection.add(x));
       render();updateInspector();
     }
-    // start move
-    pushHistory();
+    // start move (history recorded on first real movement, not on a plain click)
     const orig={};selection.forEach(sid=>{const nn=getNode(sid);if(nn)orig[sid]={x:nn.x,y:nn.y};});
-    drag={mode:"move",sx:pt.x,sy:pt.y,orig,moved:false};
+    drag={mode:"move",sx:pt.x,sy:pt.y,orig,moved:false,hist:snapshot(),pushed:false};
     return;
   }
   // empty -> marquee select
@@ -977,6 +990,9 @@ function onMove(e){
   }
   if(drag.mode==="move"){
     let dx=pt.x-drag.sx, dy=pt.y-drag.sy;
+    if(!drag.moved&&Math.hypot(dx,dy)<2/view.k)return;          // ignore click jitter
+    if(!drag.pushed){undoStack.push(drag.hist);if(undoStack.length>100)undoStack.shift();
+      redoStack.length=0;drag.pushed=true;updateToolbar();if(typeof autosave==="function")autosave();}
     drag.moved=true;
     // smart guides: nudge the drag so edges/centres line up with other shapes
     let gx=0, gy=0;
@@ -2014,7 +2030,7 @@ window.addEventListener("beforeunload",()=>{try{localStorage.setItem(LSKEY,seria
    GitHub Pages forces Cache-Control: max-age=600 and does not allow custom
    headers, so a browser can hold a stale page. Each deploy stamps BUILD_ID and
    writes ../version.json; if they differ we reload once (guarded against loops). */
-window.__BUILD_ID__="20260814-092606";
+window.__BUILD_ID__="20260818-014930";
 (function(){
   if(location.protocol==="file:")return;                 // portable/offline use
   if(window.__BUILD_ID__==="__BUILD"+"_ID__")return;      // not a deployed build (local dev)
