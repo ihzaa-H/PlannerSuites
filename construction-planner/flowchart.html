@@ -224,6 +224,7 @@
   <div class="tb-group">
     <button class="tb-btn on" id="btn-grid" title="Toggle grid snap">▦ Snap</button>
     <button class="tb-btn on" id="btn-guides" title="Smart alignment guides">📐 Guides</button>
+    <button class="tb-btn on" id="btn-avoid" title="Route connectors around shapes instead of through them">🚧 Avoid</button>
     <button class="tb-btn" id="btn-fit" title="Fit to screen">⛶ Fit</button>
   </div>
   <div class="tb-group">
@@ -408,6 +409,7 @@ let selEdges=new Set();
 let view={x:0,y:0,k:1};
 let snap=true;
 let guidesOn=true;                // smart alignment guides
+let avoidOn=true;                 // route connectors around shapes
 let nextId=1;
 const uid=()=>"n"+(nextId++);
 let clipboard=null;
@@ -663,6 +665,84 @@ function enforceOrtho(pts){
   }
   return clean;
 }
+/* ================= Obstacle-avoiding orthogonal router =================
+   Connectors route around other shapes instead of crossing them. The simple
+   elbow is tried first (cheap, covers most edges); A* over a sparse grid built
+   from the obstacle edges only runs when that route is actually blocked. */
+const AVOID_PAD=14;          // clearance kept around a shape
+const AVOID_MAX_NODES=90;    // skip pathfinding on very large diagrams
+
+function obstacleRects(exclude){
+  const out=[];
+  for(const n of state.nodes){
+    if(exclude.includes(n.id))continue;
+    if(n.shape==='container'||n.shape==='poolh')continue;   // groups are backdrops
+    out.push({x1:n.x-AVOID_PAD,y1:n.y-AVOID_PAD,x2:n.x+n.w+AVOID_PAD,y2:n.y+n.h+AVOID_PAD});
+  }
+  return out;
+}
+// does an axis-aligned segment pass through any obstacle's interior?
+function segBlocked(ax,ay,bx,by,obs){
+  if(Math.abs(ay-by)<0.5){
+    const x1=Math.min(ax,bx),x2=Math.max(ax,bx);
+    for(const o of obs) if(ay>o.y1&&ay<o.y2&&x2>o.x1&&x1<o.x2) return true;
+  }else{
+    const y1=Math.min(ay,by),y2=Math.max(ay,by);
+    for(const o of obs) if(ax>o.x1&&ax<o.x2&&y2>o.y1&&y1<o.y2) return true;
+  }
+  return false;
+}
+function pathBlocked(pts,obs){
+  for(let i=0;i<pts.length-1;i++)
+    if(segBlocked(pts[i].x,pts[i].y,pts[i+1].x,pts[i+1].y,obs))return true;
+  return false;
+}
+// A* across the grid formed by obstacle edges; returns a point list or null
+function routeAround(p1,sa,p2,sb,obs){
+  const m=22;
+  const s=offsetPt(p1,sa,m), t=offsetPt(p2,sb,m);
+  const xs=new Set([p1.x,p2.x,s.x,t.x]), ys=new Set([p1.y,p2.y,s.y,t.y]);
+  for(const o of obs){
+    xs.add(o.x1);xs.add(o.x2);xs.add((o.x1+o.x2)/2);
+    ys.add(o.y1);ys.add(o.y2);ys.add((o.y1+o.y2)/2);
+  }
+  const X=[...xs].sort((a,b)=>a-b), Y=[...ys].sort((a,b)=>a-b);
+  const W=X.length,H=Y.length;
+  if(W*H>40000)return null;
+  const xi=new Map(X.map((v,i)=>[v,i])), yi=new Map(Y.map((v,i)=>[v,i]));
+  const si=xi.get(s.x)*H+yi.get(s.y), ti=xi.get(t.x)*H+yi.get(t.y);
+  const g=new Float64Array(W*H).fill(Infinity), prev=new Int32Array(W*H).fill(-1);
+  const dir=new Int8Array(W*H).fill(-1);
+  const h=(i)=>Math.abs(X[(i/H)|0]-t.x)+Math.abs(Y[i%H]-t.y);
+  g[si]=0;
+  const open=[[h(si),si]];
+  const pop=()=>{let b=0;for(let i=1;i<open.length;i++)if(open[i][0]<open[b][0])b=i;return open.splice(b,1)[0][1];};
+  const seen=new Uint8Array(W*H);
+  let found=false, guard=0;
+  while(open.length&&guard++<60000){
+    const cur=pop();
+    if(cur===ti){found=true;break;}
+    if(seen[cur])continue; seen[cur]=1;
+    const cx=(cur/H)|0, cy=cur%H;
+    const steps=[[1,0],[-1,0],[0,1],[0,-1]];
+    for(let d=0;d<4;d++){
+      const nx=cx+steps[d][0], ny=cy+steps[d][1];
+      if(nx<0||ny<0||nx>=W||ny>=H)continue;
+      const ni=nx*H+ny;
+      if(seen[ni])continue;
+      if(segBlocked(X[cx],Y[cy],X[nx],Y[ny],obs))continue;
+      const turn=(dir[cur]>=0&&dir[cur]!==d)?18:0;   // prefer straight runs
+      const cost=g[cur]+Math.abs(X[nx]-X[cx])+Math.abs(Y[ny]-Y[cy])+turn;
+      if(cost<g[ni]){g[ni]=cost;prev[ni]=cur;dir[ni]=d;open.push([cost+h(ni),ni]);}
+    }
+  }
+  if(!found)return null;
+  const out=[];
+  for(let i=ti;i!==-1;i=prev[i]) out.push({x:X[(i/H)|0],y:Y[i%H]});
+  out.reverse();
+  return enforceOrtho([p1,...out,p2]);
+}
+
 // Full geometry for an edge: endpoints, sides, and the routed point list.
 function edgeGeom(e){
   const a=getNode(e.from), b=getNode(e.to);
@@ -677,6 +757,14 @@ function edgeGeom(e){
   }else{
     const m=22;
     points=enforceOrtho([p1, offsetPt(p1,sa,m), offsetPt(p2,sb,m), p2]);
+    // route around other shapes when the plain elbow would cut through one
+    if(avoidOn && state.nodes.length<=AVOID_MAX_NODES){
+      const obs=obstacleRects([e.from,e.to]);
+      if(obs.length && pathBlocked(points,obs)){
+        const alt=routeAround(p1,sa,p2,sb,obs);
+        if(alt && !pathBlocked(alt,obs)) points=alt;
+      }
+    }
   }
   return {points,p1,p2,sa,sb};
 }
@@ -1799,6 +1887,7 @@ function drawGuides(lines){
 }
 function clearGuides(){ $("guides")?.remove(); }
 $("btn-guides").onclick=()=>{guidesOn=!guidesOn;$("btn-guides").classList.toggle("on",guidesOn);if(!guidesOn)clearGuides();};
+$("btn-avoid").onclick=()=>{avoidOn=!avoidOn;$("btn-avoid").classList.toggle("on",avoidOn);render();autosave();};
 
 /* ---- Grouping: nodes sharing a group id select & move together ---- */
 function groupSelection(){
@@ -2048,7 +2137,7 @@ window.addEventListener("beforeunload",()=>{try{localStorage.setItem(LSKEY,seria
    GitHub Pages forces Cache-Control: max-age=600 and does not allow custom
    headers, so a browser can hold a stale page. Each deploy stamps BUILD_ID and
    writes ../version.json; if they differ we reload once (guarded against loops). */
-window.__BUILD_ID__="20260818-020129";
+window.__BUILD_ID__="20260818-020958";
 (function(){
   if(location.protocol==="file:")return;                 // portable/offline use
   if(window.__BUILD_ID__==="__BUILD"+"_ID__")return;      // not a deployed build (local dev)
